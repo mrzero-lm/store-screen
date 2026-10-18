@@ -1,132 +1,165 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Store screen</title>
-<style>
-:root{--green:#00a651;--ink:#06100a;--muted:#a9bfb1}
-html,body{height:100%;margin:0;background:#000;overflow:hidden;font-family:system-ui,Roboto,Arial,sans-serif;color:#fff;cursor:none}
-#stage{position:absolute;inset:0}
-.slide{position:absolute;inset:0;opacity:0;transition:opacity .7s;background:#000}
-.slide.on{opacity:1}
-.slide div,.slide iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-.slide.card{display:flex;flex-direction:column;justify-content:center;padding:0 9vw;background:radial-gradient(ellipse at 75% 25%,#14361f,var(--ink) 65%)}
-.card h1{font-size:6vw;margin:0 0 2vh;max-width:62vw;line-height:1.05}
-.card p{font-size:2.6vw;margin:0;color:var(--muted);max-width:58vw;line-height:1.35}
-#seg{position:fixed;top:3vh;left:3vw;z-index:6;font-size:1.7vw;font-weight:600;background:rgba(0,0,0,.6);padding:.7vh 1.3vw;border-radius:99px;transition:opacity .6s}
-#logo{position:fixed;right:3vw;bottom:5vh;z-index:6}
-#logo img{width:14vw;display:block}
-#logo.txt{background:rgba(0,0,0,.7);padding:1vh 1.6vw;border-radius:8px;font-weight:800;font-size:1.9vw;letter-spacing:.06em}
-#logo.txt b{color:var(--green)}
-#bar{position:fixed;left:0;right:0;bottom:0;height:.7vh;background:#16281d;z-index:6}
-#fill{height:100%;width:0;background:var(--green)}
-#info{position:fixed;left:3vw;bottom:2.2vh;z-index:6;font-size:1.3vw;color:var(--muted);text-shadow:0 1px 6px #000}
-</style>
+    <meta charset="utf-8">
+    <title>O'Reilly Auto Parts Racing Channel</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+            overflow: hidden;
+            font-family: sans-serif;
+            color: #ffffff;
+        }
+        #player-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #info-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 16px;
+            z-index: 10;
+            display: none;
+        }
+    </style>
 </head>
 <body>
-<div id="seg"></div>
-<div id="logo"><img src="logo.png" alt="O’Reilly Auto Parts" onerror="var l=this.parentNode;l.className='txt';l.innerHTML='<b>O’REILLY</b> AUTO PARTS'"></div>
-<div id="stage"></div>
-<div id="bar"><div id="fill"></div></div>
-<div id="info"></div>
-<script>
-var cfg = { adEverySec: 900, demoAdEverySec: 45, caps: { highlight: 90, tip: 60, ad: 45 }, highlights: [], ads: [], tips: [], tipsPlaylist: "" };
-var every = 900, lastAd = Date.now(), timer = null, turn = 0, hi = 0, ti = 0, queue = [], demo = false;
-var player = null, uid = 0, ytReady = false, started = false, errMsg = "", errUntil = 0;
-var HL = [], AD = [], TP = [];
-var stage = document.getElementById("stage"), fill = document.getElementById("fill"),
-    seg = document.getElementById("seg"), info = document.getElementById("info");
 
-function toId(s){ var m = String(s).match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/); return m ? m[1] : String(s).trim(); }
-function items(arr, type){ return (arr || []).map(function(s){ return { type: type, yt: toId(s), dur: cfg.caps[type] }; }); }
-function shuffle(a){ for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+    <div id="player-container"></div>
+    <div id="info-overlay">Now Playing: O'Reilly Auto Parts Racing Stream</div>
 
-function pick(){
-  if (queue.length) return queue.shift();
-  if ((Date.now() - lastAd) / 1000 >= every) { lastAd = Date.now(); queue = AD.length > 1 ? [AD[1]] : []; return AD[0]; }
-  return (turn++ % 2 === 0) ? HL[hi++ % HL.length] : TP[ti++ % TP.length];
-}
-function killPlayer(){ try { if (player) player.destroy(); } catch (x) {} player = null; }
+    <!-- Load YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        var player;
+        var playlist = [];
+        var currentIndex = 0;
+        var configData = {};
 
-function build(it, live){
-  var d = document.createElement("div");
-  if (live) {
-    d.className = "slide";
-    var id = "yt" + (++uid);
-    d.innerHTML = '<div id="' + id + '"></div>';
-    setTimeout(function(){
-      killPlayer();
-      var c = { playerVars: { autoplay: 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1, origin: location.origin },
-        events: {
-          onReady: function(e){ e.target.playVideo(); },
-          onStateChange: function(e){ if (e.data === 0) next(); },
-          onError: function(e){ errMsg = "Skipped a video (YouTube error " + e.data + ")"; errUntil = Date.now() + 6000; next(); }
-        } };
-      if (it.yt) c.videoId = it.yt;
-      else { c.playerVars.listType = "playlist"; c.playerVars.list = it.list; c.playerVars.index = Math.floor(Math.random() * 40); }
-      player = new YT.Player(id, c);
-    }, 50);
-    return d;
-  }
-  d.className = "slide card";
-  d.innerHTML = '<h1>' + (it.title || "Video unavailable") + '</h1><p>' + (it.sub || "Check the internet connection and the links in config.json.") + '</p>';
-  return d;
-}
+        // Load config.json dynamically
+        fetch('config.json')
+            .then(response => response.json())
+            .then(data => {
+                configData = data;
+                buildRandomizedQueue();
+            })
+            .catch(err => console.error("Error loading config:", err));
 
-function next(){
-  clearTimeout(timer);
-  var it = pick(), live = !!((it.yt || it.list) && ytReady), dur = live ? it.dur : 8;
-  var el = build(it, live), old = stage.firstChild;
-  stage.appendChild(el);
-  void el.offsetWidth; el.className += " on";
-  if (old) { old.className = old.className.replace(" on", ""); setTimeout(function(){ if (old.parentNode) old.parentNode.removeChild(old); }, 800); }
-  seg.textContent = it.type === "ad" ? "Ad break" : it.type === "tip" ? "Garage tips" : "Race highlights";
-  seg.style.opacity = 1; setTimeout(function(){ seg.style.opacity = 0; }, 5000);
-  fill.style.transition = "none"; fill.style.width = "0"; void fill.offsetWidth;
-  fill.style.transition = "width " + dur + "s linear"; fill.style.width = "100%";
-  timer = setTimeout(next, dur * 1000);
-}
+        // Shuffle array to ensure random playback order every time
+        function shuffle(array) {
+            for (var i = array.length - 1; i > 0; i--) {
+                var j = Math.floor(Math.random() * (i + 1));
+                var temp = array[i];
+                array[i] = array[j];
+                array[j] = temp;
+            }
+            return array;
+        }
 
-function tick(){
-  if (Date.now() < errUntil) { info.textContent = errMsg; return; }
-  if (!demo) { info.textContent = ""; return; }
-  var left = Math.max(0, Math.round(every - (Date.now() - lastAd) / 1000));
-  info.textContent = "Demo speed. Next ad break in " + Math.floor(left / 60) + ":" + ("0" + (left % 60)).slice(-2);
-}
+        // Build a loop queue: Highlight -> Highlight -> O'Reilly Ad -> Repeat
+        function buildRandomizedQueue() {
+            var highlights = shuffle([...configData.highlights]);
+            var ads = shuffle([...configData.ads]);
+            
+            playlist = [];
+            var adIndex = 0;
 
-window.nextItem = next;
-window.adBreakNow = function(){ lastAd = 0; next(); };
-window.toggleDemo = function(){ demo = !demo; every = demo ? cfg.demoAdEverySec : cfg.adEverySec; lastAd = Date.now(); };
+            for (var i = 0; i < highlights.length; i++) {
+                playlist.push({ type: 'highlight', id: highlights[i] });
+                
+                // Insert an O'Reilly commercial break after every 2 highlights
+                if ((i + 1) % 2 === 0 && ads.length > 0) {
+                    playlist.push({ type: 'ad', id: ads[adIndex % ads.length] });
+                    adIndex++;
+                }
+            }
 
-function startNow(){
-  if (started) return;
-  started = true;
-  next();
-}
+            currentIndex = 0;
+            if (player && playlist.length > 0) {
+                playCurrentItem();
+            }
+        }
 
-function boot(){
-  every = cfg.adEverySec;
-  HL = shuffle(items(cfg.highlights, "highlight"));
-  AD = items(cfg.ads, "ad");
-  TP = (cfg.tips && cfg.tips.length) ? items(cfg.tips, "tip")
-     : cfg.tipsPlaylist ? [{ type: "tip", list: cfg.tipsPlaylist, dur: cfg.caps.tip }] : [];
-  if (!HL.length) HL = [{ type: "highlight", title: "Race highlights", sub: "Add video links to config.json." }];
-  if (!AD.length) AD = [{ type: "ad", title: "O’Reilly Auto Parts", sub: "Add commercial links to config.json." }];
-  if (!TP.length) TP = [{ type: "tip", title: "Garage tips", sub: "Add tip video links to config.json." }];
-  window.onYouTubeIframeAPIReady = function(){ ytReady = true; startNow(); };
-  var s = document.createElement("script");
-  s.src = "https://www.youtube.com/iframe_api";
-  s.onerror = startNow;
-  document.head.appendChild(s);
-  setTimeout(startNow, 8000);
-  setInterval(tick, 1000);
-}
+        // Initialize YouTube Player once API is ready
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('player-container', {
+                height: '100%',
+                width: '100%',
+                playerVars: {
+                    'autoplay': 1,
+                    'controls': 0,
+                    'rel': 0,
+                    'fs': 0,
+                    'iv_load_policy': 3
+                },
+                events: {
+                    'onReady': function(event) {
+                        if (playlist.length > 0) {
+                            playCurrentItem();
+                        }
+                    },
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
 
-fetch("config.json").then(function(r){ return r.json(); }).catch(function(){ return {}; }).then(function(c){
-  for (var k in c) cfg[k] = c[k];
-  boot();
-});
-</script>
+        // CRITICAL: Detects exact moment any video or ad finishes playing (State 0)
+        function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.ENDED) {
+                currentIndex++;
+                if (currentIndex >= playlist.length) {
+                    // Re-shuffle and loop infinitely when the playlist finishes
+                    buildRandomizedQueue();
+                } else {
+                    playCurrentItem();
+                }
+            }
+        }
+
+        function playCurrentItem() {
+            var item = playlist[currentIndex];
+            var overlay = document.getElementById('info-overlay');
+            
+            if (item.type === 'ad') {
+                overlay.innerText = "O'REILLY AUTO PARTS COMMERCIAL";
+                overlay.style.display = 'block';
+            } else {
+                overlay.innerText = "O'Reilly Auto Parts Series Highlights";
+                overlay.style.display = 'block';
+                // Hide text overlay after 5 seconds so it looks clean like TV
+                setTimeout(() => { overlay.style.display = 'none'; }, 5000);
+            }
+
+            player.loadVideoById(item.id);
+        }
+
+        // Remote Control Bindings coming from MainActivity.kt
+        function nextItem() {
+            currentIndex = (currentIndex + 1) % playlist.length;
+            playCurrentItem();
+        }
+
+        function adBreakNow() {
+            if (configData.ads && configData.ads.length > 0) {
+                var randomAd = configData.ads[Math.floor(Math.random() * configData.ads.length)];
+                player.loadVideoById(randomAd);
+            }
+        }
+
+        function toggleDemo() {
+            // Optional demo toggle placeholder
+        }
+    </script>
 </body>
 </html>
