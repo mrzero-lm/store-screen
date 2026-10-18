@@ -1,7 +1,4 @@
 {
-  "adEverySec": 900,
-  "demoAdEverySec": 45,
-  "caps": { "highlight": 90, "tip": 60, "ad": 45 },
   "highlights": [
     "HGSSWkl1tIw",
     "RCtA1NtgjAs",
@@ -15,7 +12,5 @@
   ],
   "ads": [
     "6L951Wh61ss"
-  ],
-  "tips": [],
-  "tipsPlaylist": "UUHU4R49ZCZ9MXE_FUk5FMdA"
+  ]
 }
