@@ -84,20 +84,25 @@
         var isPlayingAd = false;
         var savedRaceTime = 0;
         var secondsSinceLastAd = 0;
-        var AD_INTERVAL_SECONDS = 300; // 5 minutes (300 seconds)
+        var AD_INTERVAL_SECONDS = 300; // 5 minutes (300 seconds) of race action
+        var ADS_PER_BREAK = 3;         // Play 3 commercials back-to-back per break
+        var adsPlayedInBreak = 0;
+        var adErrorRetries = 0;
         var progressInterval;
 
         // Built-in default list (overridden if config.json loads)
         var defaultConfig = {
             highlights: [
                 "calcJQMokVI", "4m_-zPPu2cY", "lAuO92kIj2c", "rcnmoQkhzQM",
-                "oe1_LpC0QsI", "ks7n8cbr2AU", "GWMuNWlj7Xg", "7M50zXoo0DM",
-                "RtvqKZ8F5kM", "HGSSWkl1tIw", "V0gRpA8Ci20", "sBwRDx0_Mdw",
-                "pARoSj_HuRM", "aFpsWhljrkk", "9sL61Q1vmPo", "Hq1V6sDUnGs"
+                "oe1_LpC0QsI", "ks7n8cbr2AU", "GWMuNWlj7Xg", "_IGXsipTVhU",
+                "QQKbZDDYEi0", "7M50zXoo0DM", "RtvqKZ8F5kM", "HGSSWkl1tIw",
+                "V0gRpA8Ci20", "sBwRDx0_Mdw", "pARoSj_HuRM", "aFpsWhljrkk",
+                "9sL61Q1vmPo", "Hq1V6sDUnGs"
             ],
             ads: [
                 "sGSZt-1V6qk", "u_m-ZNZE0MQ", "vKUhgoVfSpY", "-wEhkR8SQPs",
-                "iG3b56k62iA", "i4O4wBP8EoQ", "8kyZrzUSW64", "6L951Wh61ss"
+                "iG3b56k62iA", "i4O4wBP8EoQ", "8kyZrzUSW64", "6HjZLXPy7SY",
+                "8ydtKnCfBNE", "5McPlaK9awQ", "vOaLiQnV6Tk", "6L951Wh61ss"
             ]
         };
 
@@ -167,6 +172,8 @@
         function startOrResumeRace() {
             if (races.length === 0) return;
             isPlayingAd = false;
+            adsPlayedInBreak = 0;
+            adErrorRetries = 0;
             secondsSinceLastAd = 0;
             document.getElementById('progress-bar').style.width = '0%';
 
@@ -194,6 +201,18 @@
 
             isPlayingAd = true;
             secondsSinceLastAd = 0;
+            adsPlayedInBreak = 0;
+            adErrorRetries = 0;
+            playNextAdInBreak();
+        }
+
+        function playNextAdInBreak() {
+            if (ads.length === 0 || adsPlayedInBreak >= ADS_PER_BREAK) {
+                startOrResumeRace();
+                return;
+            }
+
+            adsPlayedInBreak++;
             document.getElementById('progress-bar').style.width = '0%';
 
             var currentAdId = ads[adIndex];
@@ -203,12 +222,15 @@
                 adIndex = 0;
             }
 
-            showBanner("O'REILLY AUTO PARTS COMMERCIAL BREAK");
+            showBanner("O'REILLY COMMERCIAL BREAK (" + adsPlayedInBreak + " OF " + ADS_PER_BREAK + ")");
             player.loadVideoById(currentAdId);
         }
 
         function onPlayerStateChange(event) {
             if (event.data === YT.PlayerState.PLAYING) {
+                if (isPlayingAd) {
+                    adErrorRetries = 0;
+                }
                 startProgressTracker();
             } else {
                 stopProgressTracker();
@@ -218,10 +240,10 @@
             if (event.data === YT.PlayerState.ENDED) {
                 stopProgressTracker();
                 if (isPlayingAd) {
-                    // Commercial finished -> seamlessly resume the race where we left off
-                    startOrResumeRace();
+                    // Play the next ad in the 3-pack block, or resume race if all 3 finished
+                    playNextAdInBreak();
                 } else {
-                    // Race finished naturally -> reset timestamp, advance to next race, and run an ad break
+                    // Race finished naturally -> reset timestamp, advance to next race, and run a 3-ad break
                     savedRaceTime = 0;
                     raceIndex++;
                     if (raceIndex >= races.length) {
@@ -236,8 +258,14 @@
         function onPlayerError(event) {
             stopProgressTracker();
             if (isPlayingAd) {
-                // If an old commercial fails to load, jump right back into the race at the saved timestamp
-                startOrResumeRace();
+                // Don't count a dead/unembeddable ad toward the 3-ad block—grab the next working ad instead
+                adsPlayedInBreak = Math.max(0, adsPlayedInBreak - 1);
+                adErrorRetries++;
+                if (adErrorRetries > ads.length) {
+                    startOrResumeRace();
+                } else {
+                    playNextAdInBreak();
+                }
             } else {
                 // If a race video is unavailable, skip to the next race
                 savedRaceTime = 0;
@@ -257,10 +285,9 @@
                         document.getElementById('progress-bar').style.width = percent + '%';
                     }
 
-                    // Count race playback time and trigger commercial every 5 minutes (300s)
+                    // Count race playback time and trigger commercial break every 5 minutes (300s)
                     if (!isPlayingAd) {
                         secondsSinceLastAd++;
-                        // Only interrupt if there are at least 15 seconds left in the race clip
                         if (secondsSinceLastAd >= AD_INTERVAL_SECONDS && (duration - current > 15)) {
                             stopProgressTracker();
                             triggerCommercialBreak();
@@ -280,8 +307,8 @@
         function nextItem() {
             stopProgressTracker();
             if (isPlayingAd) {
-                // Skip commercial and resume race
-                startOrResumeRace();
+                // Skip current commercial to next commercial in the block (or back to race after 3)
+                playNextAdInBreak();
             } else {
                 // Skip to next race
                 savedRaceTime = 0;
