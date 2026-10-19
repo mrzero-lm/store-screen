@@ -32,9 +32,10 @@
             opacity: 0.9;
             pointer-events: none;
         }
+        /* Info Overlay */
         #info-overlay {
             position: absolute;
-            bottom: 20px;
+            bottom: 30px;
             left: 20px;
             background: rgba(0, 0, 0, 0.7);
             padding: 10px 15px;
@@ -43,13 +44,33 @@
             z-index: 10;
             display: none;
         }
+        /* Green Progress Bar at Bottom */
+        #progress-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            z-index: 30;
+        }
+        #progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: #00843D; /* O'Reilly Green */
+            transition: width 0.2s linear;
+        }
     </style>
 </head>
 <body>
 
     <div id="player-container"></div>
     <img id="corner-logo" src="logo.png" alt="O'Reilly Logo">
-    <div id="info-overlay">Now Playing: O'Reilly Auto Parts Racing Stream</div>
+    <div id="info-overlay">O'Reilly Auto Parts Racing Stream</div>
+    
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+    </div>
 
     <!-- Load YouTube IFrame API -->
     <script src="https://www.youtube.com/iframe_api"></script>
@@ -58,6 +79,7 @@
         var playlist = [];
         var currentIndex = 0;
         var configData = {};
+        var progressInterval;
 
         // Load your local config.json file
         fetch('config.json')
@@ -79,7 +101,7 @@
             return array;
         }
 
-        // Build a continuous loop: Highlight -> Highlight -> O'Reilly Ad -> Repeat
+        // Build continuous queue
         function buildRandomizedQueue() {
             var highlights = shuffle([...(configData.highlights || [])]);
             var ads = shuffle([...(configData.ads || [])]);
@@ -90,7 +112,6 @@
             for (var i = 0; i < highlights.length; i++) {
                 playlist.push({ type: 'highlight', id: highlights[i] });
                 
-                // Insert an O'Reilly commercial break after every 2 highlights
                 if ((i + 1) % 2 === 0 && ads.length > 0) {
                     playlist.push({ type: 'ad', id: ads[adIndex % ads.length] });
                     adIndex++;
@@ -126,32 +147,57 @@
             });
         }
 
-        // CRITICAL: Waits for exact state 0 (ENDED) so highlights and commercials play 100% to the end[span_0](start_span)[span_0](end_span)
         function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.PLAYING) {
+                startProgressTracker();
+                var overlay = document.getElementById('info-overlay');
+                var item = playlist[currentIndex];
+                
+                if (item && item.type === 'ad') {
+                    overlay.innerText = "O'REILLY AUTO PARTS COMMERCIAL";
+                } else {
+                    overlay.innerText = "O'Reilly Auto Parts Racing Stream";
+                }
+                overlay.style.display = 'block';
+                setTimeout(() => { overlay.style.display = 'none'; }, 4000);
+            } else {
+                stopProgressTracker();
+            }
+
+            // CRITICAL: Plays 100% to the end
             if (event.data === YT.PlayerState.ENDED) {
                 currentIndex++;
                 if (currentIndex >= playlist.length) {
-                    buildRandomizedQueue(); // Reshuffle and loop infinitely
+                    buildRandomizedQueue();
                 } else {
                     playCurrentItem();
                 }
             }
         }
 
+        function startProgressTracker() {
+            stopProgressTracker();
+            progressInterval = setInterval(function() {
+                if (player && typeof player.getCurrentTime === 'function') {
+                    var current = player.getCurrentTime();
+                    var duration = player.getDuration();
+                    if (duration > 0) {
+                        var percent = (current / duration) * 100;
+                        document.getElementById('progress-bar').style.width = percent + '%';
+                    }
+                }
+            }, 500);
+        }
+
+        function stopProgressTracker() {
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+        }
+
         function playCurrentItem() {
             if (!playlist[currentIndex]) return;
             var item = playlist[currentIndex];
-            var overlay = document.getElementById('info-overlay');
-            
-            if (item.type === 'ad') {
-                overlay.innerText = "O'REILLY AUTO PARTS COMMERCIAL";
-                overlay.style.display = 'block';
-            } else {
-                overlay.innerText = "O'Reilly Auto Parts Racing Stream";
-                overlay.style.display = 'block';
-                setTimeout(() => { overlay.style.display = 'none'; }, 4000);
-            }
-
             player.loadVideoById(item.id);
         }
 
