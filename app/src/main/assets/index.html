@@ -21,6 +21,17 @@
             top: 0;
             left: 0;
         }
+        /* Corner Logo Overlay */
+        #corner-logo {
+            position: absolute;
+            top: 25px;
+            right: 25px;
+            width: 140px;
+            height: auto;
+            z-index: 20;
+            opacity: 0.9;
+            pointer-events: none;
+        }
         #info-overlay {
             position: absolute;
             bottom: 20px;
@@ -37,6 +48,7 @@
 <body>
 
     <div id="player-container"></div>
+    <img id="corner-logo" src="logo.png" alt="O'Reilly Logo">
     <div id="info-overlay">Now Playing: O'Reilly Auto Parts Racing Stream</div>
 
     <!-- Load YouTube IFrame API -->
@@ -47,54 +59,16 @@
         var currentIndex = 0;
         var configData = {};
 
-        // Load config.json for fallback IDs and commercial pools
+        // Load your local config.json file
         fetch('config.json')
             .then(response => response.json())
             .then(data => {
                 configData = data;
-                fetchDynamicHighlights();
+                buildRandomizedQueue();
             })
-            .catch(err => {
-                console.error("Error loading config:", err);
-                fallbackToStatic();
-            });
+            .catch(err => console.error("Error loading config:", err));
 
-        // Dynamically query YouTube RSS feed for NASCAR highlights to avoid manual curation
-        function fetchDynamicHighlights() {
-            // Channel feed for official NASCAR uploads (RSS to JSON conversion proxy)
-            var channelId = "UCAw54jXw0wN8rQ9e7P3b8YQ"; // NASCAR Official YouTube Feed
-            var rssUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UCU2mLw3gR16uC5K34k4S44g"; 
-            
-            // Using a public CORS/RSS parser or fallback to smart filtering on config pool
-            fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?playlist_id=PLbVOgWDwWJOn3M9cT4T79e3W7j7vT3k0k')}`)
-                .then(res => res.json())
-                .then(data => {
-                    var dynamicIds = [];
-                    if (data && data.items) {
-                        data.items.forEach(item => {
-                            var title = item.title.toLowerCase();
-                            // Filter specifically for highlights, recaps, and packaging (skipping shorts and full races)
-                            if (title.includes('highlight') || title.includes('recap') || title.includes('extended')) {
-                                var videoId = item.link.split('v=')[1];
-                                if (videoId) dynamicIds.push(videoId);
-                            }
-                        });
-                    }
-
-                    // If dynamic feed returns items, use them; otherwise fall back to config pool
-                    var highlightPool = dynamicIds.length > 0 ? dynamicIds : (configData.highlights || []);
-                    buildQueue(highlightPool, configData.ads || []);
-                })
-                .catch(() => {
-                    // Fallback seamlessly if network/RSS proxy fails
-                    fallbackToStatic();
-                });
-        }
-
-        function fallbackToStatic() {
-            buildQueue(configData.highlights || [], configData.ads || []);
-        }
-
+        // Shuffle array for random playback order
         function shuffle(array) {
             for (var i = array.length - 1; i > 0; i--) {
                 var j = Math.floor(Math.random() * (i + 1));
@@ -105,19 +79,20 @@
             return array;
         }
 
-        function buildQueue(highlights, ads) {
-            var shuffledHighlights = shuffle([...highlights]);
-            var shuffledAds = shuffle([...ads]);
+        // Build a continuous loop: Highlight -> Highlight -> O'Reilly Ad -> Repeat
+        function buildRandomizedQueue() {
+            var highlights = shuffle([...(configData.highlights || [])]);
+            var ads = shuffle([...(configData.ads || [])]);
             
             playlist = [];
             var adIndex = 0;
 
-            for (var i = 0; i < shuffledHighlights.length; i++) {
-                playlist.push({ type: 'highlight', id: shuffledHighlights[i] });
+            for (var i = 0; i < highlights.length; i++) {
+                playlist.push({ type: 'highlight', id: highlights[i] });
                 
-                // Intersperse an O'Reilly commercial break after every 2 professional highlights
-                if ((i + 1) % 2 === 0 && shuffledAds.length > 0) {
-                    playlist.push({ type: 'ad', id: shuffledAds[adIndex % shuffledAds.length] });
+                // Insert an O'Reilly commercial break after every 2 highlights
+                if ((i + 1) % 2 === 0 && ads.length > 0) {
+                    playlist.push({ type: 'ad', id: ads[adIndex % ads.length] });
                     adIndex++;
                 }
             }
@@ -128,6 +103,7 @@
             }
         }
 
+        // Initialize YouTube Player
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('player-container', {
                 height: '100%',
@@ -150,12 +126,12 @@
             });
         }
 
-        // CRITICAL: Waits for exact state 0 (ENDED) so highlights and commercials play 100% to the end[span_2](start_span)[span_2](end_span)
+        // CRITICAL: Waits for exact state 0 (ENDED) so highlights and commercials play 100% to the end[span_0](start_span)[span_0](end_span)
         function onPlayerStateChange(event) {
             if (event.data === YT.PlayerState.ENDED) {
                 currentIndex++;
                 if (currentIndex >= playlist.length) {
-                    fetchDynamicHighlights(); // Refresh and reshuffle a fresh batch automatically
+                    buildRandomizedQueue(); // Reshuffle and loop infinitely
                 } else {
                     playCurrentItem();
                 }
@@ -171,7 +147,7 @@
                 overlay.innerText = "O'REILLY AUTO PARTS COMMERCIAL";
                 overlay.style.display = 'block';
             } else {
-                overlay.innerText = "NASCAR Highlights & Recaps";
+                overlay.innerText = "O'Reilly Auto Parts Racing Stream";
                 overlay.style.display = 'block';
                 setTimeout(() => { overlay.style.display = 'none'; }, 4000);
             }
@@ -187,12 +163,10 @@
 
         function adBreakNow() {
             if (configData.ads && configData.ads.length > 0) {
-                var randomAd = configData.ads[Math.floor(Math.random() * configData.ads.length)];
-                player.loadVideoById(randomAd);
+                var randomId = configData.ads[Math.floor(Math.random() * configData.ads.length)];
+                player.loadVideoById(randomId);
             }
         }
-
-        function toggleDemo() {}
     </script>
 </body>
 </html>
