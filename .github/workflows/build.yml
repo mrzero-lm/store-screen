@@ -38,3 +38,12 @@ jobs:
       with:
         name: store-screen-apk
         path: app/build/outputs/apk/release/app-release-unsigned.apk
+
+    - name: Publish GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: app/build/outputs/apk/release/app-release-unsigned.apk
+        tag_name: build-${{ github.run_number }}
+        name: Build ${{ github.run_number }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
