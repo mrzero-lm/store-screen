@@ -37,7 +37,8 @@
             position: absolute;
             bottom: 30px;
             left: 20px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
+            border-left: 4px solid #00843D;
             padding: 10px 15px;
             border-radius: 4px;
             font-size: 16px;
@@ -72,27 +73,45 @@
         <div id="progress-bar"></div>
     </div>
 
-    <!-- Load YouTube IFrame API -->
     <script src="https://www.youtube.com/iframe_api"></script>
     <script>
         var player;
-        var playlist = [];
-        var currentIndex = 0;
+        var races = [];
+        var ads = [];
+        var raceIndex = 0;
+        var adIndex = 0;
+
+        var isPlayingAd = false;
+        var savedRaceTime = 0;
+        var secondsSinceLastAd = 0;
+        var AD_INTERVAL_SECONDS = 300; // 5 minutes (300 seconds)
         var progressInterval;
 
-        // Verified short highlight clips & commercial blocks
-        var masterHighlights = [
-            "7M50zXoo0DM", // Charlotte highlights
-            "RtvqKZ8F5kM", // Daytona highlights
-            "HGSSWkl1tIw", // Las Vegas highlights
-            "V0gRpA8Ci20"  // Phoenix highlights
-        ];
-        
-        var masterAds = [
-            "6L951Wh61ss"
-        ];
+        // Built-in default list (overridden if config.json loads)
+        var defaultConfig = {
+            highlights: [
+                "calcJQMokVI", "4m_-zPPu2cY", "lAuO92kIj2c", "rcnmoQkhzQM",
+                "oe1_LpC0QsI", "ks7n8cbr2AU", "GWMuNWlj7Xg", "7M50zXoo0DM",
+                "RtvqKZ8F5kM", "HGSSWkl1tIw", "V0gRpA8Ci20", "sBwRDx0_Mdw",
+                "pARoSj_HuRM", "aFpsWhljrkk", "9sL61Q1vmPo", "Hq1V6sDUnGs"
+            ],
+            ads: [
+                "sGSZt-1V6qk", "u_m-ZNZE0MQ", "vKUhgoVfSpY", "-wEhkR8SQPs",
+                "iG3b56k62iA", "i4O4wBP8EoQ", "8kyZrzUSW64", "6L951Wh61ss"
+            ]
+        };
 
-        // Shuffle array for random playback order
+        fetch('config.json')
+            .then(response => response.json())
+            .then(data => {
+                var loadedRaces = (data.highlights && data.highlights.length > 0) ? data.highlights : defaultConfig.highlights;
+                var loadedAds = (data.ads && data.ads.length > 0) ? data.ads : defaultConfig.ads;
+                initLists(loadedRaces, loadedAds);
+            })
+            .catch(err => {
+                initLists(defaultConfig.highlights, defaultConfig.ads);
+            });
+
         function shuffle(array) {
             var currentIndex = array.length, temporaryValue, randomIndex;
             while (currentIndex !== 0) {
@@ -105,33 +124,17 @@
             return array;
         }
 
-        // Build continuous randomized queue mixing highlights and commercial breaks
-        function buildQueue() {
-            var highlights = shuffle([...masterHighlights]);
-            var ads = shuffle([...masterAds]);
-            
-            playlist = [];
-            var adIndex = 0;
-
-            for (var i = 0; i < highlights.length; i++) {
-                playlist.push({ type: 'highlight', id: highlights[i] });
-                
-                // Drop in an O'Reilly commercial break after every 2 highlights
-                if ((i + 1) % 2 === 0 && ads.length > 0) {
-                    playlist.push({ type: 'ad', id: ads[adIndex % ads.length] });
-                    adIndex++;
-                }
-            }
-
-            currentIndex = 0;
-            if (player && playlist.length > 0) {
-                playCurrentItem();
+        function initLists(raceList, adList) {
+            races = shuffle([...raceList]);
+            ads = shuffle([...adList]);
+            raceIndex = 0;
+            adIndex = 0;
+            if (player && typeof player.loadVideoById === 'function') {
+                startOrResumeRace();
             }
         }
 
-        // Initialize YouTube Player
         function onYouTubeIframeAPIReady() {
-            buildQueue();
             player = new YT.Player('player-container', {
                 height: '100%',
                 width: '100%',
@@ -144,38 +147,102 @@
                 },
                 events: {
                     'onReady': function(event) {
-                        playCurrentItem();
+                        if (races.length > 0) {
+                            startOrResumeRace();
+                        }
                     },
-                    'onStateChange': onPlayerStateChange
+                    'onStateChange': onPlayerStateChange,
+                    'onError': onPlayerError
                 }
             });
+        }
+
+        function showBanner(text) {
+            var overlay = document.getElementById('info-overlay');
+            overlay.innerText = text;
+            overlay.style.display = 'block';
+            setTimeout(() => { overlay.style.display = 'none'; }, 4000);
+        }
+
+        function startOrResumeRace() {
+            if (races.length === 0) return;
+            isPlayingAd = false;
+            secondsSinceLastAd = 0;
+            document.getElementById('progress-bar').style.width = '0%';
+
+            var currentRaceId = races[raceIndex];
+            if (savedRaceTime > 0) {
+                showBanner("Resuming Race Coverage...");
+                player.loadVideoById({
+                    videoId: currentRaceId,
+                    startSeconds: savedRaceTime
+                });
+            } else {
+                showBanner("O'Reilly Auto Parts Racing Stream");
+                player.loadVideoById(currentRaceId);
+            }
+        }
+
+        function triggerCommercialBreak() {
+            if (ads.length === 0) return;
+            if (!isPlayingAd && player && typeof player.getCurrentTime === 'function') {
+                var currentTime = Math.floor(player.getCurrentTime());
+                if (currentTime > 0) {
+                    savedRaceTime = currentTime;
+                }
+            }
+
+            isPlayingAd = true;
+            secondsSinceLastAd = 0;
+            document.getElementById('progress-bar').style.width = '0%';
+
+            var currentAdId = ads[adIndex];
+            adIndex++;
+            if (adIndex >= ads.length) {
+                ads = shuffle([...ads]);
+                adIndex = 0;
+            }
+
+            showBanner("O'REILLY AUTO PARTS COMMERCIAL BREAK");
+            player.loadVideoById(currentAdId);
         }
 
         function onPlayerStateChange(event) {
             if (event.data === YT.PlayerState.PLAYING) {
                 startProgressTracker();
-                var overlay = document.getElementById('info-overlay');
-                var item = playlist[currentIndex];
-                
-                if (item && item.type === 'ad') {
-                    overlay.innerText = "O'REILLY AUTO PARTS COMMERCIAL";
-                } else {
-                    overlay.innerText = "O'Reilly Auto Parts Racing Stream";
-                }
-                overlay.style.display = 'block';
-                setTimeout(() => { overlay.style.display = 'none'; }, 4000);
             } else {
                 stopProgressTracker();
             }
 
-            // CRITICAL: Waits for exact state 0 (ENDED) so videos play 100% to the end
+            // Wait for 100% completion of commercial or race
             if (event.data === YT.PlayerState.ENDED) {
-                currentIndex++;
-                if (currentIndex >= playlist.length) {
-                    buildQueue(); // Reshuffle and loop infinitely
+                stopProgressTracker();
+                if (isPlayingAd) {
+                    // Commercial finished -> seamlessly resume the race where we left off
+                    startOrResumeRace();
                 } else {
-                    playCurrentItem();
+                    // Race finished naturally -> reset timestamp, advance to next race, and run an ad break
+                    savedRaceTime = 0;
+                    raceIndex++;
+                    if (raceIndex >= races.length) {
+                        races = shuffle([...races]);
+                        raceIndex = 0;
+                    }
+                    triggerCommercialBreak();
                 }
+            }
+        }
+
+        function onPlayerError(event) {
+            stopProgressTracker();
+            if (isPlayingAd) {
+                // If an old commercial fails to load, jump right back into the race at the saved timestamp
+                startOrResumeRace();
+            } else {
+                // If a race video is unavailable, skip to the next race
+                savedRaceTime = 0;
+                raceIndex = (raceIndex + 1) % races.length;
+                startOrResumeRace();
             }
         }
 
@@ -189,8 +256,18 @@
                         var percent = (current / duration) * 100;
                         document.getElementById('progress-bar').style.width = percent + '%';
                     }
+
+                    // Count race playback time and trigger commercial every 5 minutes (300s)
+                    if (!isPlayingAd) {
+                        secondsSinceLastAd++;
+                        // Only interrupt if there are at least 15 seconds left in the race clip
+                        if (secondsSinceLastAd >= AD_INTERVAL_SECONDS && (duration - current > 15)) {
+                            stopProgressTracker();
+                            triggerCommercialBreak();
+                        }
+                    }
                 }
-            }, 500);
+            }, 1000);
         }
 
         function stopProgressTracker() {
@@ -199,22 +276,24 @@
             }
         }
 
-        function playCurrentItem() {
-            if (!playlist[currentIndex]) return;
-            var item = playlist[currentIndex];
-            player.loadVideoById(item.id);
-        }
-
         // Android Remote Control Bindings
         function nextItem() {
-            currentIndex = (currentIndex + 1) % playlist.length;
-            playCurrentItem();
+            stopProgressTracker();
+            if (isPlayingAd) {
+                // Skip commercial and resume race
+                startOrResumeRace();
+            } else {
+                // Skip to next race
+                savedRaceTime = 0;
+                raceIndex = (raceIndex + 1) % races.length;
+                startOrResumeRace();
+            }
         }
 
         function adBreakNow() {
-            if (masterAds.length > 0) {
-                var randomAdId = masterAds[Math.floor(Math.random() * masterAds.length)];
-                player.loadVideoById(randomAdId);
+            if (!isPlayingAd) {
+                stopProgressTracker();
+                triggerCommercialBreak();
             }
         }
     </script>
