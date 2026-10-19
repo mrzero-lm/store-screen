@@ -47,16 +47,54 @@
         var currentIndex = 0;
         var configData = {};
 
-        // Load config.json dynamically
+        // Load config.json for fallback IDs and commercial pools
         fetch('config.json')
             .then(response => response.json())
             .then(data => {
                 configData = data;
-                buildRandomizedQueue();
+                fetchDynamicHighlights();
             })
-            .catch(err => console.error("Error loading config:", err));
+            .catch(err => {
+                console.error("Error loading config:", err);
+                fallbackToStatic();
+            });
 
-        // Shuffle array to ensure random playback order every time
+        // Dynamically query YouTube RSS feed for NASCAR highlights to avoid manual curation
+        function fetchDynamicHighlights() {
+            // Channel feed for official NASCAR uploads (RSS to JSON conversion proxy)
+            var channelId = "UCAw54jXw0wN8rQ9e7P3b8YQ"; // NASCAR Official YouTube Feed
+            var rssUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UCU2mLw3gR16uC5K34k4S44g"; 
+            
+            // Using a public CORS/RSS parser or fallback to smart filtering on config pool
+            fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?playlist_id=PLbVOgWDwWJOn3M9cT4T79e3W7j7vT3k0k')}`)
+                .then(res => res.json())
+                .then(data => {
+                    var dynamicIds = [];
+                    if (data && data.items) {
+                        data.items.forEach(item => {
+                            var title = item.title.toLowerCase();
+                            // Filter specifically for highlights, recaps, and packaging (skipping shorts and full races)
+                            if (title.includes('highlight') || title.includes('recap') || title.includes('extended')) {
+                                var videoId = item.link.split('v=')[1];
+                                if (videoId) dynamicIds.push(videoId);
+                            }
+                        });
+                    }
+
+                    // If dynamic feed returns items, use them; otherwise fall back to config pool
+                    var highlightPool = dynamicIds.length > 0 ? dynamicIds : (configData.highlights || []);
+                    buildQueue(highlightPool, configData.ads || []);
+                })
+                .catch(() => {
+                    // Fallback seamlessly if network/RSS proxy fails
+                    fallbackToStatic();
+                });
+        }
+
+        function fallbackToStatic() {
+            buildQueue(configData.highlights || [], configData.ads || []);
+        }
+
         function shuffle(array) {
             for (var i = array.length - 1; i > 0; i--) {
                 var j = Math.floor(Math.random() * (i + 1));
@@ -67,20 +105,19 @@
             return array;
         }
 
-        // Build a loop queue: Highlight -> Highlight -> O'Reilly Ad -> Repeat
-        function buildRandomizedQueue() {
-            var highlights = shuffle([...configData.highlights]);
-            var ads = shuffle([...configData.ads]);
+        function buildQueue(highlights, ads) {
+            var shuffledHighlights = shuffle([...highlights]);
+            var shuffledAds = shuffle([...ads]);
             
             playlist = [];
             var adIndex = 0;
 
-            for (var i = 0; i < highlights.length; i++) {
-                playlist.push({ type: 'highlight', id: highlights[i] });
+            for (var i = 0; i < shuffledHighlights.length; i++) {
+                playlist.push({ type: 'highlight', id: shuffledHighlights[i] });
                 
-                // Insert an O'Reilly commercial break after every 2 highlights
-                if ((i + 1) % 2 === 0 && ads.length > 0) {
-                    playlist.push({ type: 'ad', id: ads[adIndex % ads.length] });
+                // Intersperse an O'Reilly commercial break after every 2 professional highlights
+                if ((i + 1) % 2 === 0 && shuffledAds.length > 0) {
+                    playlist.push({ type: 'ad', id: shuffledAds[adIndex % shuffledAds.length] });
                     adIndex++;
                 }
             }
@@ -91,7 +128,6 @@
             }
         }
 
-        // Initialize YouTube Player once API is ready
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('player-container', {
                 height: '100%',
@@ -114,13 +150,12 @@
             });
         }
 
-        // CRITICAL: Detects exact moment any video or ad finishes playing (State 0)
+        // CRITICAL: Waits for exact state 0 (ENDED) so highlights and commercials play 100% to the end[span_2](start_span)[span_2](end_span)
         function onPlayerStateChange(event) {
             if (event.data === YT.PlayerState.ENDED) {
                 currentIndex++;
                 if (currentIndex >= playlist.length) {
-                    // Re-shuffle and loop infinitely when the playlist finishes
-                    buildRandomizedQueue();
+                    fetchDynamicHighlights(); // Refresh and reshuffle a fresh batch automatically
                 } else {
                     playCurrentItem();
                 }
@@ -128,6 +163,7 @@
         }
 
         function playCurrentItem() {
+            if (!playlist[currentIndex]) return;
             var item = playlist[currentIndex];
             var overlay = document.getElementById('info-overlay');
             
@@ -135,16 +171,15 @@
                 overlay.innerText = "O'REILLY AUTO PARTS COMMERCIAL";
                 overlay.style.display = 'block';
             } else {
-                overlay.innerText = "O'Reilly Auto Parts Series Highlights";
+                overlay.innerText = "NASCAR Highlights & Recaps";
                 overlay.style.display = 'block';
-                // Hide text overlay after 5 seconds so it looks clean like TV
-                setTimeout(() => { overlay.style.display = 'none'; }, 5000);
+                setTimeout(() => { overlay.style.display = 'none'; }, 4000);
             }
 
             player.loadVideoById(item.id);
         }
 
-        // Remote Control Bindings coming from MainActivity.kt
+        // Android Remote Control Bindings
         function nextItem() {
             currentIndex = (currentIndex + 1) % playlist.length;
             playCurrentItem();
@@ -157,9 +192,7 @@
             }
         }
 
-        function toggleDemo() {
-            // Optional demo toggle placeholder
-        }
+        function toggleDemo() {}
     </script>
 </body>
 </html>
